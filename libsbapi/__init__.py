@@ -10,4 +10,4 @@ from .constants import (ENCAPSULATED_INTERFACE_TRANSPORT, EXP_DETAILS,
                         WRITE_MULTIPLE_REGISTERS,
                         WRITE_READ_MULTIPLE_REGISTERS, WRITE_SINGLE_COIL,
                         WRITE_SINGLE_REGISTER)
-
+from .ksconstants import CMDCODE, STATCODE, PRIVCODE

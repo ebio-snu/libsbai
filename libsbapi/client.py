@@ -208,7 +208,15 @@ class SBAPIClient:
             self._req_except_handler(e)
             return None
 
-    def read_holding_registers(self, reg_addr, reg_nb, unit_id):
+    def read_holding_registers(self, reg_addr, regs_nb, unit_id, retry=3):
+        for _ in range(retry):
+            reg = self._read_holding_registers(reg_addr, regs_nb, unit_id)
+            if reg is not None:
+                return reg
+            print ("comm. error. retry....")
+        return None            
+
+    def _read_holding_registers(self, reg_addr, reg_nb, unit_id):
         """Modbus function READ_HOLDING_REGISTERS (0x03).
 
         :param reg_addr: register address (0 to 65535)
@@ -250,7 +258,15 @@ class SBAPIClient:
             self._req_except_handler(e)
             return None
 
-    def write_multiple_registers(self, regs_addr, regs_value, unit_id):
+    def write_multiple_registers(self, regs_addr, regs_value, unit_id, retry=3):
+        #print ("write: ", regs_addr, regs_value)
+        for _ in range(retry):
+            if self._write_multiple_registers(regs_addr, regs_value, unit_id) is True:
+                return True
+            print ("comm. error. retry....")
+        return False
+
+    def _write_multiple_registers(self, regs_addr, regs_value, unit_id):
         """Modbus function WRITE_MULTIPLE_REGISTERS (0x10).
 
         :param regs_addr: registers address (0 to 65535)
@@ -296,68 +312,6 @@ class SBAPIClient:
             self._req_except_handler(e)
             return False
 
-    def write_read_multiple_registers(self, write_addr, write_values, read_addr, read_nb=1):
-        """Modbus function WRITE_READ_MULTIPLE_REGISTERS (0x17).
-
-        :param write_addr: write registers address (0 to 65535)
-        :type write_addr: int
-        :param write_values: registers values to write
-        :type write_values: list
-        :param read_addr: read register address (0 to 65535)
-        :type read_addr: int
-        :param read_nb: number of registers to read (1 to 125)
-        :type read_nb: int
-        :returns: registers list or None if fail
-        :rtype: list of int or None
-        """
-        # check params
-        check_l = [(not 0 <= int(write_addr) <= 0xffff, 'write_addr out of range (valid from 0 to 65535)'),
-                   (not 1 <= len(write_values) <= 121, 'number of registers out of range (valid from 1 to 121)'),
-                   (int(write_addr) + len(write_values) > 0x10000, 'write after end of modbus address space'),
-                   (not 0 <= int(read_addr) <= 0xffff, 'read_addr out of range (valid from 0 to 65535)'),
-                   (not 1 <= int(read_nb) <= 125, 'read_nb out of range (valid from 1 to 125)'),
-                   (int(read_addr) + int(read_nb) > 0x10000, 'read after end of modbus address space'), ]
-        for err, msg in check_l:
-            if err:
-                raise ValueError(msg)
-        # make request
-        try:
-            # init PDU registers part
-            pdu_regs_part = b''
-            # populate it with register values
-            for reg in write_values:
-                # check current register value
-                if not 0 <= int(reg) <= 0xffff:
-                    raise ValueError('write_values list contains out of range values')
-                # pack register for build frame
-                pdu_regs_part += struct.pack('>H', reg)
-            bytes_nb = len(pdu_regs_part)
-            # concatenate PDU parts
-            tx_pdu = struct.pack('>BHHHHB', WRITE_READ_MULTIPLE_REGISTERS, read_addr, read_nb,
-                                 write_addr, len(write_values), bytes_nb)
-            tx_pdu += pdu_regs_part
-            # make a request
-            rx_pdu = self._req_pdu(tx_pdu=tx_pdu, rx_min_len=4)
-            # response decode
-            # extract field "byte count"
-            byte_count = rx_pdu[1]
-            # frame with regs value
-            f_regs = rx_pdu[2:]
-            # check rx_byte_count: buffer size must be consistent and have at least the requested number of registers
-            if byte_count < 2 * read_nb or byte_count != len(f_regs):
-                raise SBAPIClient._NetworkError(MB_RECV_ERR, 'rx byte count mismatch')
-            # allocate a reg_nb size list
-            registers = [0] * read_nb
-            # fill registers list with register items
-            for i in range(read_nb):
-                registers[i] = struct.unpack('>H', f_regs[i * 2:i * 2 + 2])[0]
-            # return registers list
-            return registers
-        # handle error during request
-        except SBAPIClient._InternalError as e:
-            self._req_except_handler(e)
-            return
-
     def _send(self, frame):
         """Send frame over API.
         :param frame: modbus frame to send (MBAP + PDU)
@@ -369,13 +323,14 @@ class SBAPIClient:
             url = "http://" + self._host + ":" + str(self._port) + "/" + ("read" if self._isread else "write")
             params = {"command": frame.hex()}
             headers = {"Authorization": self._key, "Content-Type": "application/json"}
-            print(params)
+            #print(params)
             x = requests.post(url, headers=headers, json=params)
-            print(x.text)
+            #print(x.text)
             tmp = x.json()
             if tmp["result"] is True:
                 self._recved = bytes.fromhex(tmp["response"])
             else:
+                print("error", tmp)
                 raise SBAPIClient._NetworkError(MB_SEND_ERR, 'send error')
         except Exception as ex: 
             raise SBAPIClient._NetworkError(MB_SEND_ERR, str(ex))
@@ -437,7 +392,7 @@ class SBAPIClient:
         f_protocol_err = f_protocol_id != 0
         f_length_err = f_length >= 256
         f_unit_id_err = f_unit_id != self.unit_id
-        print (f_transaction_id, self._transaction_id, f_protocol_id, f_length, f_unit_id)        # check
+        #print (f_transaction_id, self._transaction_id, f_protocol_id, f_length, f_unit_id)        # check
         # checking error status of fields
         if f_transaction_err or f_protocol_err or f_length_err or f_unit_id_err:
             self.close()
@@ -531,6 +486,6 @@ class SBAPIClient:
         pass
 
 if __name__ == "__main__":
-    client = SBAPIClient("access-key")
+    client = SBAPIClient("Authorization Key")
     reg = client.read_holding_registers(203, 6, 3)
     print(reg)

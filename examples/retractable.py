@@ -10,14 +10,16 @@ import struct
 from libsbapi import SBAPIClient, CMDCODE, STATCODE
 
 opid = 1
-idx = 4
-client = SBAPIClient("Authoriztion key")
+idx = 36
+client = SBAPIClient("Authorization Key")
 
 def getcommand(cmd):
     ctbl = {
         CMDCODE.OFF: "중지",
-        CMDCODE.ON: "작동",
-        CMDCODE.TIMED_ON: "시간작동"
+        CMDCODE.OPEN: "열림",
+        CMDCODE.CLOSE: "닫힘",
+        CMDCODE.TIMED_OPEN: "시간열림",
+        CMDCODE.TIMED_CLOSE: "시간닫힘"
     }
     return ctbl[cmd] if cmd in ctbl else "없는 명령"
 
@@ -35,7 +37,8 @@ def sendcommand(cmd, sec = None):
 def getstatus(stat):
     ctbl = {
         STATCODE.READY : "중지된 상태",
-        STATCODE.WORKING : "작동중",
+        STATCODE.OPENING : "여는중",
+        STATCODE.CLOSING : "닫는중"
     }
     return ctbl[stat] if stat in ctbl else "없는 상태"
 
@@ -52,29 +55,42 @@ def readstatus(readtime = False):
     else:
         print ("OPID가 매치되지 않습니다. 레지스터값은 {0}, 기대하고 있는 값은 {1} 입니다.".format(reg[0], opid))
 
-
 # Initialize
 sendcommand (CMDCODE.OFF)
 time.sleep(1) # 잠시 대기
 readstatus()
 
-# ON
-sendcommand (CMDCODE.ON)
-time.sleep(1) # 작동 여부 확인전에 잠시 대기
+# OPEN
+sendcommand (CMDCODE.OPEN)
 for _ in range(1, 10):
+    time.sleep(1) # 작동 여부 확인전에 잠시 대기
     readstatus()
-    time.sleep(1)
 
 # OFF
 sendcommand (CMDCODE.OFF)
 time.sleep(1) # 잠시 대기
 readstatus()
 
-# TIMED ON - 10 초 작동
-sendcommand (CMDCODE.TIMED_ON, 10)
-time.sleep(1) # 작동 여부 확인전에 잠시 대기
+# CLOSE
+sendcommand (CMDCODE.CLOSE)
 for _ in range(1, 10):
-    readstatus(True)
-    time.sleep(1)
+    time.sleep(1) # 작동 여부 확인전에 잠시 대기
+    readstatus()
 
+# OFF
+sendcommand (CMDCODE.OFF)
+time.sleep(1) # 잠시 대기
+readstatus()
+
+# TIMED OPEN - 10 초 작동
+sendcommand (CMDCODE.TIMED_OPEN, 10)
+for _ in range(1, 15):
+    time.sleep(1) # 작동 여부 확인전에 잠시 대기
+    readstatus(True)
+
+# TIMED CLOSE - 10 초 작동
+sendcommand (CMDCODE.TIMED_CLOSE, 10)
+for _ in range(1, 15):
+    time.sleep(1) # 작동 여부 확인전에 잠시 대기
+    readstatus(True)
 
